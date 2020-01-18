@@ -114,6 +114,10 @@
   #include "../feature/tmc_util.h"
 #endif
 
+#if ENABLED(PROBE_TEMP_COMPENSATION)
+  #include "../feature/probe_temp_compensation.h"
+#endif
+
 #pragma pack(push, 1) // No padding between variables
 
 typedef struct { uint16_t X, Y, Z, X2, Y2, Z2, Z3, E0, E1, E2, E3, E4, E5; } tmc_stepper_current_t;
@@ -211,6 +215,18 @@ typedef struct SettingsDataStruct {
   // SERVO_ANGLES
   //
   uint16_t servo_angles[EEPROM_NUM_SERVOS][2];          // M281 P L U
+
+  //
+  // Temperature first layer compensation values
+  //
+  #if ENABLED(PROBE_TEMP_COMPENSATION)
+    int16_t z_offsets_probe[COUNT(temp_comp.z_offsets_probe)], // M871 P I V
+            z_offsets_bed[COUNT(temp_comp.z_offsets_bed)]      // M871 B I V
+            #if ENABLED(USE_TEMP_EXT_COMPENSATION)
+              , z_offsets_ext[COUNT(temp_comp.z_offsets_ext)]  // M871 E I V
+            #endif
+          ;
+  #endif
 
   //
   // BLTOUCH
@@ -700,6 +716,19 @@ void MarlinSettings::postprocess() {
     }
 
     //
+    // Thermal first layer compensation values
+    //
+    #if ENABLED(PROBE_TEMP_COMPENSATION)
+      EEPROM_WRITE(temp_comp.z_offsets_probe);
+      EEPROM_WRITE(temp_comp.z_offsets_bed);
+      #if ENABLED(USE_TEMP_EXT_COMPENSATION)
+        EEPROM_WRITE(temp_comp.z_offsets_ext);
+      #endif
+    #else
+      // No placeholder data for this feature
+    #endif
+
+    //
     // BLTOUCH
     //
     {
@@ -1145,7 +1174,7 @@ void MarlinSettings::postprocess() {
         EEPROM_WRITE(planner.extruder_advance_K);
       #else
         dummy = 0;
-        for (uint8_t q = _MIN(EXTRUDERS, 1); q--;) EEPROM_WRITE(dummy);
+        for (uint8_t q = _MAX(EXTRUDERS, 1); q--;) EEPROM_WRITE(dummy);
       #endif
     }
 
@@ -1513,6 +1542,20 @@ void MarlinSettings::postprocess() {
         #endif
         EEPROM_READ(servo_angles_arr);
       }
+
+      //
+      // Thermal first layer compensation values
+      //
+      #if ENABLED(PROBE_TEMP_COMPENSATION)
+        EEPROM_READ(temp_comp.z_offsets_probe);
+        EEPROM_READ(temp_comp.z_offsets_bed);
+        #if ENABLED(USE_TEMP_EXT_COMPENSATION)
+          EEPROM_READ(temp_comp.z_offsets_ext);
+        #endif
+        temp_comp.reset_index();
+      #else
+        // No placeholder data for this feature
+      #endif
 
       //
       // BLTOUCH
@@ -1934,7 +1977,7 @@ void MarlinSettings::postprocess() {
       // Linear Advance
       //
       {
-        float extruder_advance_K[_MIN(EXTRUDERS, 1)];
+        float extruder_advance_K[_MAX(EXTRUDERS, 1)];
         _FIELD_TEST(planner_extruder_advance_K);
         EEPROM_READ(extruder_advance_K);
         #if ENABLED(LIN_ADVANCE)
@@ -2352,7 +2395,7 @@ void MarlinSettings::reset() {
   #endif
 
   #if HAS_BED_PROBE
-    constexpr float dpo[XYZ] = NOZZLE_TO_PROBE_OFFSET;
+    constexpr float dpo[] = NOZZLE_TO_PROBE_OFFSET;
     static_assert(COUNT(dpo) == 3, "NOZZLE_TO_PROBE_OFFSET must contain offsets for X, Y, and Z.");
     #if HAS_PROBE_XY_OFFSET
       LOOP_XYZ(a) probe_offset[a] = dpo[a];
